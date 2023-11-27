@@ -3,6 +3,11 @@ import { StatusBar, TextInput, TouchableOpacity, StyleSheet, Text, View } from '
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, set, get } from "firebase/database";
 import md5, { str_md5 } from "react-native-md5";
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { HomeScreen } from './Home';
+
+const Stack = createNativeStackNavigator();
 
 const firebaseConfig = {
   apiKey: "AIzaSyAx1fkbBA9XRVfy_goTGs95VCoS5tm1fOM",
@@ -17,6 +22,17 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export default function App() {
+  return (
+    <NavigationContainer initialRouteName="Home">
+      <Stack.Navigator screenOptions={{headerShown: false}}>
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Home" component={HomeScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+
+function LoginScreen({ navigation }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -33,6 +49,7 @@ export default function App() {
 
         if (storedPasswordHash === enteredPasswordHash) {
           console.log('Login successful');
+          navigation.navigate('Home')
         } else {
           console.log('Incorrect password');
         }
