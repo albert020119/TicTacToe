@@ -9,130 +9,154 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
-import BleManager from 'react-native-ble-manager';
-import BluetoothSerial from 'react-native-bluetooth-serial'
+import { BackHandler } from 'react-native';
+import RNBluetoothClassic from 'react-native-bluetooth-classic';
 
-export function HomeScreen() {
-  const [devices, setDevices] = useState([]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export function HomeScreen({ navigation }) {
+  const [devices, setDevices] = useState({
+    unpaired: [],
+    paired: [],
+  });
   const [isModalVisible, setIsModalVisible] = useState(false);
 
+  const handleBackButton = () => {
+    if (isModalVisible) {
+      setIsModalVisible(false);
+      return true; // Prevent default behavior (exit app)
+    }
+    return false; // Default behavior (exit app)
+  };
+
+  BackHandler.addEventListener('hardwareBackPress', handleBackButton);
+
+  const cancelDiscovery = async () => {
+    try {
+      const cancelled = await RNBluetoothClassic.cancelDiscovery();
+    } catch (error) {
+      console.error('Error occurred while attempting to cancel discover devices', error);
+    }
+  };
+
+  const isLegitDevice = (value) => {
+    return !value['name'].includes(':');
+  };
+
+
   const startScan = async () => {
-    console.log("Before starting")
-    BleManager.start({ showAlert: false }).then(() => {
-      console.log("Module initialized");
-    }).catch((error) => {
-      console.log(error);
-    });
-    BleManager.enableBluetooth()
-    .then(() => {
-      console.log("The bluetooth is already enabled or the user confirm");
-    })
-    .catch((error) => {
-      console.log("The user refuse to enable bluetooth");
+    RNBluetoothClassic.requestBluetoothEnabled();
+    await cancelDiscovery();
+    const unpaired = await RNBluetoothClassic.startDiscovery();
+    const filteredUnpaired = unpaired.filter(isLegitDevice);
+    const paired = await RNBluetoothClassic.getBondedDevices();
+    console.log('Scanning for devices...');
+
+    setDevices({
+      unpaired: filteredUnpaired,
+      paired: paired,
     });
 
-    BleManager.scan([], 5, true).then(() => {
-      console.log("Scan started");
-    });
+    setIsModalVisible(true);
+  };
 
-    setTimeout(() => BleManager.getDiscoveredPeripherals([]).then((peripheralsArray) => {
-      for (peripheral in peripheralsArray) {
-        data = peripheralsArray[peripheral]["advertising"]
-        console.log(data)
-        if ("localName" in data){
-          console.log(data["localName"])
-        }
-        setDevices(peripheralsArray);
-        setIsModalVisible(true);
-      }
-    }), 5000)
+  const acceptConnections = async () => {
+    try {
+      console.log('Accepting connections');
+      const device = await RNBluetoothClassic.accept({});
+      console.log('Got connection');
+      navigation.navigate("TicTacToe", {
+        connected_device: device,
+        start: false
+      }); 
+    } catch (error) {}
+  };
 
-
-    
-  }
-
-  const connectToDevice = (deviceId) => {
-    console.log(`Connecting to device with ID: ${deviceId}`);
-    BleManager.connect(deviceId)
-      .then(() => {
-        // Success code
-        console.log("Connected");
-      })
-      .catch((error) => {
-        // Failure code
-        console.log(error);
+  const connectToDevice = async (device) => {
+    RNBluetoothClassic.pairDevice(device.address);
+    let connection = await device.isConnected();
+    console.log('Device is connected:', connection);
+    if (!connection) {
+      connection = await device.connect({
+        CONNECTOR_TYPE: "rfcomm",
+        DELIMITER: "\n",
+        DEVICE_CHARSET: Platform.OS === "ios" ? 1536 : "utf-8",
       });
+    }
+    console.log('Device is connected:', connection);
+    navigation.navigate("TicTacToe", {
+      connected_device: device,
+      start: true
+    }); 
     setIsModalVisible(false);
   };
 
-  const onBluetoothConnect = async () => {
-    handleAndroidPermissions(); 
-    startScan(); 
+  const initiateBluetooth = async () => {
+    startScan();
   };
 
-  const handleAndroidPermissions = () => {
+  const handleAndroidPermissions = async () => {
+    console.log('Asking for permissions');
     if (Platform.OS === 'android' && Platform.Version >= 31) {
-      PermissionsAndroid.requestMultiple([
+      await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-      ]).then(result => {
-        if (result) {
-          console.debug(
-            '[handleAndroidPermissions] User accepts runtime permissions android 12+',
-          );
-        } else {
-          console.error(
-            '[handleAndroidPermissions] User refuses runtime permissions android 12+',
-          );
-        }
-      });
-    } else if (Platform.OS === 'android' && Platform.Version >= 23) {
-      PermissionsAndroid.check(
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-      ).then(checkResult => {
-        if (checkResult) {
-          console.debug(
-            '[handleAndroidPermissions] runtime permission Android <12 already OK',
-          );
+      ]).then((result) => {
+        if (result) {
+          console.debug('[handleAndroidPermissions] User accepts Bluetooth runtime permissions Android 12+');
         } else {
-          PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          ).then(requestResult => {
-            if (requestResult) {
-              console.debug(
-                '[handleAndroidPermissions] User accepts runtime permission android <12',
-              );
-            } else {
-              console.error(
-                '[handleAndroidPermissions] User refuses runtime permission android <12',
-              );
-            }
-          });
+          console.error('[handleAndroidPermissions] User refuses Bluetooth runtime permissions Android 12+');
         }
       });
     }
+    console.log('Asked for permissions');
+    acceptConnections();
+  };
+
+  console.log('Initializing Bluetooth');
+  handleAndroidPermissions();
+
+  const goToGame = async () => {
+    navigation.navigate('TicTacToe');
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Tic Tac Toe</Text>
-      <TouchableOpacity style={styles.button} onPress={startScan}>
-        <Text>Connect with Bluetooth</Text>
+      <TouchableOpacity style={styles.button} onPress={initiateBluetooth}>
+        <Text>Scan for devices</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.button} onPress={goToGame}>
+        <Text>Go To Game</Text>
       </TouchableOpacity>
 
       <Modal visible={isModalVisible} animationType="slide">
         <View style={styles.modalContainer}>
           <Text style={styles.modalTitle}>Select a Device</Text>
+          <Text style={styles.subTitle}>Unpaired Devices</Text>
           <FlatList
-            data={devices}
-            keyExtractor={(item) => item.id}
+            data={devices.unpaired}
+            keyExtractor={(item) => item.address}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.deviceItem}
-                onPress={() => connectToDevice(item.id)}
+                onPress={() => connectToDevice(item)}
               >
                 <Text>{item.name}</Text>
-                <Text>{`RSSI: ${item.rssi}`}</Text>
+              </TouchableOpacity>
+            )}
+          />
+          <Text style={styles.subTitle}>Paired Devices</Text>
+          <FlatList
+            data={devices.paired}
+            keyExtractor={(item) => item.address}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.deviceItem}
+                onPress={() => connectToDevice(item)}
+              >
+                <Text>{item.name}</Text>
               </TouchableOpacity>
             )}
           />
@@ -141,6 +165,7 @@ export function HomeScreen() {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -178,6 +203,11 @@ const styles = StyleSheet.create({
     padding: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
+  },
+  subTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 10,
   }
   // Add more styles for additional components as needed
 });

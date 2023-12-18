@@ -6,7 +6,8 @@ import md5, { str_md5 } from "react-native-md5";
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen } from './Home';
-
+import { TicTacToe } from './TicTacToe'
+ 
 const Stack = createNativeStackNavigator();
 
 const firebaseConfig = {
@@ -27,6 +28,7 @@ export default function App() {
       <Stack.Navigator screenOptions={{headerShown: false}}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="TicTacToe" component={TicTacToe} />
       </Stack.Navigator>
     </NavigationContainer>
   );
